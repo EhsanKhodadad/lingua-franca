@@ -417,9 +417,15 @@ public class CGenerator extends GeneratorBase {
       code.writeToFile(targetFile);
     } catch (IOException e) {
       String message = e.getMessage();
+      if (message == null || message.isBlank()) {
+        message = e.getClass().getName();
+      }
       messageReporter.nowhere().error(message);
     } catch (RuntimeException e) {
       String message = e.getMessage();
+      if (message == null || message.isBlank()) {
+        message = e.getClass().getName();
+      }
       messageReporter.nowhere().error(message);
       throw e;
     }
