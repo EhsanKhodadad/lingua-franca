@@ -15,7 +15,7 @@ main reactor {
   state e: bool = false
   r = new R()  // Check that it compiles with this reactor.
 
-  reaction(startup) -> c {=
+  reaction A(startup) -> c {=
     lf_schedule_int(c, 0, 0);
     printf("Hello, World!\n");
   =}
