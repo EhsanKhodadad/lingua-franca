@@ -272,14 +272,24 @@ public class FedLauncherGenerator {
         "# Parse launcher arguments.",
         "LOG_TO_FILE=false",
         "USE_TMUX=false",
+        "SLEEP_TIME=1",
+        "SLEEP_TIME_SET=false",
         "REMAINING_ARGS=()",
+        "NEXT_IS_SLEEP=false",
         "for arg in \"$@\"; do",
-        "    if [ \"$arg\" = \"--help\" ] || [ \"$arg\" = \"-h\" ]; then",
-        "        echo \"Usage: $0 [-l] [-x|--tmux] [-h|--help] [FEDERATE_ARGS...]\"",
+        "    if [ \"$NEXT_IS_SLEEP\" = true ]; then",
+        "        SLEEP_TIME=\"$arg\"",
+        "        SLEEP_TIME_SET=true",
+        "        NEXT_IS_SLEEP=false",
+        "    elif [ \"$arg\" = \"--help\" ] || [ \"$arg\" = \"-h\" ]; then",
+        "        echo \"Usage: $0 [-l] [-x|--tmux] [-s|--sleep N] [-h|--help]"
+            + " [FEDERATE_ARGS...]\"",
         "        echo \"\"",
         "        echo \"Launcher options:\"",
         "        echo \"  -l              Log federate output to files instead of stdout\"",
         "        echo \"  -x, --tmux      Launch federates and RTI in a tmux session\"",
+        "        echo \"  -s, --sleep N   Seconds to sleep after launching RTI (default: 1,"
+            + " tmux: 2)\"",
         "        echo \"  -h, --help      Show this help message\"",
         "        echo \"\"",
         "        echo \"All other arguments are forwarded to each federate.\"",
@@ -289,6 +299,8 @@ public class FedLauncherGenerator {
         "        LOG_TO_FILE=true",
         "    elif [ \"$arg\" = \"--tmux\" ] || [ \"$arg\" = \"-x\" ]; then",
         "        USE_TMUX=true",
+        "    elif [ \"$arg\" = \"--sleep\" ] || [ \"$arg\" = \"-s\" ]; then",
+        "        NEXT_IS_SLEEP=true",
         "    else",
         "        REMAINING_ARGS+=(\"$arg\")",
         "    fi",
@@ -387,7 +399,7 @@ public class FedLauncherGenerator {
         "# Wait for the RTI to boot up before",
         "# starting federates (this could be done by waiting for a specific output",
         "# from the RTI, but here we use sleep)",
-        "sleep 1");
+        "sleep $SLEEP_TIME");
   }
 
   private String getRemoteLaunchCode(
@@ -632,6 +644,8 @@ public class FedLauncherGenerator {
     lines.add("        exit 1");
     lines.add("    fi");
     lines.add("");
+    lines.add("    if [ \"$SLEEP_TIME_SET\" = false ]; then SLEEP_TIME=2; fi");
+    lines.add("");
 
     // Create a tmux session with a name derived from the program and federation ID.
     lines.add("    SESSION_NAME=\"" + fileConfig.name + "_${FEDERATION_ID:0:8}\"");
@@ -720,7 +734,7 @@ public class FedLauncherGenerator {
         String fedTarget = getUserHost(fed.user, fed.host);
         String binDir = "~/" + rtiConfig.getDirectory() + "/" + fileConfig.name + "/bin";
         fedCmd =
-            "sleep 1 && ssh "
+            "sleep $SLEEP_TIME && ssh "
                 + fedTarget
                 + " 'cd ~/"
                 + rtiConfig.getDirectory()
@@ -733,7 +747,8 @@ public class FedLauncherGenerator {
                 + " -i $FEDERATION_ID'";
       } else {
         var buildConfig = getBuildConfig(fed, fileConfig, messageReporter);
-        fedCmd = "sleep 1 && " + buildConfig.localExecuteCommand() + " ${REMAINING_ARGS[*]}";
+        fedCmd =
+            "sleep $SLEEP_TIME && " + buildConfig.localExecuteCommand() + " ${REMAINING_ARGS[*]}";
       }
       lines.add("    tmux send-keys -t \"$FED_PANE_" + i + "\" \"" + fedCmd + "\" C-m");
     }
