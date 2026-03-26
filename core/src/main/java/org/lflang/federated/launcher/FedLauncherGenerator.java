@@ -92,6 +92,7 @@ public class FedLauncherGenerator {
     StringBuilder shCode = new StringBuilder();
     StringBuilder distCode = new StringBuilder();
     shCode.append(getSetupCode()).append("\n");
+    shCode.append(getTmuxLaunchCode(federates, rtiConfig)).append("\n");
     String distHeader = getDistHeader();
     String host = rtiConfig.getHost();
     String target = host;
@@ -154,10 +155,7 @@ public class FedLauncherGenerator {
     for (FederateInstance federate : federates) {
       var buildConfig = getBuildConfig(federate, fileConfig, messageReporter);
       if (federate.isRemote) {
-        Path fedRelSrcGenPath =
-            fileConfig.getOutPath().relativize(fileConfig.getSrcGenPath()).resolve(federate.name);
         if (distCode.isEmpty()) distCode.append(distHeader).append("\n");
-        String logFileName = String.format("log/%s_%s.log", fileConfig.name, federate.name);
         distCode
             .append(
                 getDistCode(rtiConfig.getDirectory(), federate.name, federate.user, federate.host))
@@ -273,20 +271,36 @@ public class FedLauncherGenerator {
         "",
         "# Parse launcher arguments.",
         "LOG_TO_FILE=false",
+        "USE_TMUX=false",
+        "SLEEP_TIME=1",
+        "SLEEP_TIME_SET=false",
         "REMAINING_ARGS=()",
+        "NEXT_IS_SLEEP=false",
         "for arg in \"$@\"; do",
-        "    if [ \"$arg\" = \"--help\" ] || [ \"$arg\" = \"-h\" ]; then",
-        "        echo \"Usage: $0 [-l] [-h|--help] [FEDERATE_ARGS...]\"",
+        "    if [ \"$NEXT_IS_SLEEP\" = true ]; then",
+        "        SLEEP_TIME=\"$arg\"",
+        "        SLEEP_TIME_SET=true",
+        "        NEXT_IS_SLEEP=false",
+        "    elif [ \"$arg\" = \"--help\" ] || [ \"$arg\" = \"-h\" ]; then",
+        "        echo \"Usage: $0 [-l] [-x|--tmux] [-s|--sleep N] [-h|--help]"
+            + " [FEDERATE_ARGS...]\"",
         "        echo \"\"",
         "        echo \"Launcher options:\"",
-        "        echo \"  -l          Log federate output to files instead of stdout\"",
-        "        echo \"  -h, --help  Show this help message\"",
+        "        echo \"  -l              Log federate output to files instead of stdout\"",
+        "        echo \"  -x, --tmux      Launch federates and RTI in a tmux session\"",
+        "        echo \"  -s, --sleep N   Seconds to sleep after launching RTI (default: 1,"
+            + " tmux: 2)\"",
+        "        echo \"  -h, --help      Show this help message\"",
         "        echo \"\"",
         "        echo \"All other arguments are forwarded to each federate.\"",
         "        echo \"For available federate parameters, run a federate binary with --help.\"",
         "        exit 0",
         "    elif [ \"$arg\" = \"-l\" ]; then",
         "        LOG_TO_FILE=true",
+        "    elif [ \"$arg\" = \"--tmux\" ] || [ \"$arg\" = \"-x\" ]; then",
+        "        USE_TMUX=true",
+        "    elif [ \"$arg\" = \"--sleep\" ] || [ \"$arg\" = \"-s\" ]; then",
+        "        NEXT_IS_SLEEP=true",
         "    else",
         "        REMAINING_ARGS+=(\"$arg\")",
         "    fi",
@@ -385,7 +399,7 @@ public class FedLauncherGenerator {
         "# Wait for the RTI to boot up before",
         "# starting federates (this could be done by waiting for a specific output",
         "# from the RTI, but here we use sleep)",
-        "sleep 1");
+        "sleep $SLEEP_TIME");
   }
 
   private String getRemoteLaunchCode(
@@ -581,6 +595,174 @@ public class FedLauncherGenerator {
         "    " + executeCommand + " \"${REMAINING_ARGS[@]}\" &",
         "fi",
         "pids[" + federateIndex + "]=$!");
+  }
+
+  /**
+   * Return the RTI launch command as a single line (no line-continuation backslashes). This is used
+   * in the tmux launch code where the command is sent as keystrokes to a tmux pane.
+   */
+  private String getRtiCommandOneLine(String rtiBinPath, List<FederateInstance> federates) {
+    return getRtiCommand(rtiBinPath, federates, false)
+        .replaceAll(" \\\\\\n\\s*", " ")
+        .replaceAll(" \\\\\\s*$", "");
+  }
+
+  /**
+   * Return shell script code that launches the federation in a tmux session when the USE_TMUX
+   * variable is set. The RTI gets a narrow pane at the top of the window, and the federates are
+   * arranged in a tiled grid below it. The block is wrapped in an {@code if} conditional so that
+   * the non-tmux code path is skipped when tmux mode is active.
+   */
+  private String getTmuxLaunchCode(List<FederateInstance> federates, RtiConfig rtiConfig) {
+    String host = rtiConfig.getHost();
+    boolean rtiIsLocal = host.equals("localhost") || host.equals("0.0.0.0");
+    int numFeds = federates.size();
+
+    String rtiCmd;
+    if (rtiIsLocal) {
+      rtiCmd = getRtiCommandOneLine(fileConfig.getRtiBinPath().toString(), federates);
+    } else {
+      String target = (rtiConfig.getUser() != null) ? rtiConfig.getUser() + "@" + host : host;
+      rtiCmd =
+          "ssh "
+              + target
+              + " '"
+              + getRtiCommandOneLine(rtiConfig.getRtiBinPath(fileConfig), federates)
+              + "'";
+    }
+
+    List<String> lines = new ArrayList<>();
+    lines.add("if [ \"$USE_TMUX\" = true ]; then");
+
+    // Check that tmux is installed.
+    lines.add("    if ! command -v tmux &> /dev/null; then");
+    lines.add("        echo \"tmux is not installed. Install it using one of the following:\"");
+    lines.add("        echo \"  macOS:          brew install tmux\"");
+    lines.add("        echo \"  Ubuntu/Debian:  sudo apt-get install tmux\"");
+    lines.add("        echo \"  Fedora:         sudo dnf install tmux\"");
+    lines.add("        echo \"  Arch Linux:     sudo pacman -S tmux\"");
+    lines.add("        exit 1");
+    lines.add("    fi");
+    lines.add("");
+    lines.add("    if [ \"$SLEEP_TIME_SET\" = false ]; then SLEEP_TIME=2; fi");
+    lines.add("");
+
+    // Create a tmux session with a name derived from the program and federation ID.
+    lines.add("    SESSION_NAME=\"" + fileConfig.name + "_${FEDERATION_ID:0:8}\"");
+    lines.add("    tmux kill-session -t \"$SESSION_NAME\" 2>/dev/null || true");
+    lines.add("");
+
+    // Create tmux session. The initial pane will become the first federate.
+    lines.add("    FED_PANE_0=$(tmux new-session -d -s \"$SESSION_NAME\" -P -F '#{pane_id}')");
+
+    // Arrange federate panes in a grid: up to 3 columns per row.
+    int maxCols = 3;
+    int rows = (numFeds + maxCols - 1) / maxCols;
+
+    // Split into rows (horizontal bands of equal height).
+    if (rows > 1) {
+      lines.add("    ROW_TARGET=$FED_PANE_0");
+      for (int r = 0; r < rows - 1; r++) {
+        int pct = (int) Math.round(100.0 * (rows - r - 1) / (rows - r));
+        lines.add("    ROW_" + r + "=$ROW_TARGET");
+        lines.add(
+            "    ROW_TARGET=$(tmux split-window -v -l "
+                + pct
+                + "% -t \"$ROW_TARGET\" -P -F '#{pane_id}')");
+      }
+      lines.add("    ROW_" + (rows - 1) + "=$ROW_TARGET");
+    } else {
+      lines.add("    ROW_0=$FED_PANE_0");
+    }
+
+    // Split each row into equally-sized columns.
+    for (int r = 0; r < rows; r++) {
+      int fedStart = r * maxCols;
+      int colsInRow = Math.min(numFeds - fedStart, maxCols);
+      if (colsInRow == 1) {
+        lines.add("    FED_PANE_" + fedStart + "=$ROW_" + r);
+      } else {
+        lines.add("    COL_TARGET=$ROW_" + r);
+        for (int c = 0; c < colsInRow - 1; c++) {
+          int pct = (int) Math.round(100.0 * (colsInRow - c - 1) / (colsInRow - c));
+          lines.add("    FED_PANE_" + (fedStart + c) + "=$COL_TARGET");
+          lines.add(
+              "    COL_TARGET=$(tmux split-window -h -l "
+                  + pct
+                  + "% -t \"$COL_TARGET\" -P -F '#{pane_id}')");
+        }
+        lines.add("    FED_PANE_" + (fedStart + colsInRow - 1) + "=$COL_TARGET");
+      }
+    }
+    lines.add("");
+
+    // Create a narrow full-width RTI pane at the very top of the window.
+    lines.add(
+        "    RTI_PANE=$(tmux split-window -f -v -b -l 5 -t \"$SESSION_NAME:0\""
+            + " -P -F '#{pane_id}')");
+    lines.add("");
+
+    // Style pane title bars with a blue background and white text.
+    lines.add("    tmux set-option -t \"$SESSION_NAME\" pane-border-status top");
+    lines.add("    tmux set-option -t \"$SESSION_NAME\" pane-border-format \" #{pane_title} \"");
+    lines.add(
+        "    tmux set-option -t \"$SESSION_NAME\" pane-border-style" + " 'fg=white,bg=colour25'");
+    lines.add(
+        "    tmux set-option -t \"$SESSION_NAME\" pane-active-border-style"
+            + " 'fg=white,bg=colour25,bold'");
+    lines.add("    tmux set-option -t \"$SESSION_NAME\" status off");
+    lines.add("    tmux set-option -t \"$SESSION_NAME\" mouse on");
+    lines.add("");
+
+    // Assign pane titles. The RTI title doubles as an instruction banner.
+    lines.add(
+        "    tmux select-pane -t \"$RTI_PANE\" -T"
+            + " \"RTI — Ctrl+C to stop | Ctrl+B d to detach and kill\"");
+    for (int i = 0; i < numFeds; i++) {
+      lines.add(
+          "    tmux select-pane -t \"$FED_PANE_" + i + "\" -T \"" + federates.get(i).name + "\"");
+    }
+    lines.add("");
+
+    // Launch the RTI and federates. Each federate command sleeps briefly
+    // to give the RTI time to start listening before federates connect.
+    lines.add("    tmux send-keys -t \"$RTI_PANE\" \"" + rtiCmd + "\" C-m");
+    for (int i = 0; i < numFeds; i++) {
+      FederateInstance fed = federates.get(i);
+      String fedCmd;
+      if (fed.isRemote) {
+        String fedTarget = getUserHost(fed.user, fed.host);
+        String binDir = "~/" + rtiConfig.getDirectory() + "/" + fileConfig.name + "/bin";
+        fedCmd =
+            "sleep $SLEEP_TIME && ssh "
+                + fedTarget
+                + " 'cd ~/"
+                + rtiConfig.getDirectory()
+                + "/"
+                + fileConfig.name
+                + " && "
+                + binDir
+                + "/"
+                + fed.name
+                + " -i $FEDERATION_ID'";
+      } else {
+        var buildConfig = getBuildConfig(fed, fileConfig, messageReporter);
+        fedCmd =
+            "sleep $SLEEP_TIME && " + buildConfig.localExecuteCommand() + " ${REMAINING_ARGS[*]}";
+      }
+      lines.add("    tmux send-keys -t \"$FED_PANE_" + i + "\" \"" + fedCmd + "\" C-m");
+    }
+    lines.add("");
+
+    // Focus the RTI pane and attach to the session.
+    lines.add("    tmux select-pane -t \"$RTI_PANE\"");
+    lines.add("    tmux attach-session -t \"$SESSION_NAME\"");
+    lines.add("    tmux kill-session -t \"$SESSION_NAME\" 2>/dev/null || true");
+    lines.add("    EXITED_SUCCESSFULLY=true");
+    lines.add("    exit 0");
+    lines.add("fi");
+
+    return String.join("\n", lines);
   }
 
   /**
