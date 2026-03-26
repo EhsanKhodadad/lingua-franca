@@ -610,8 +610,7 @@ public class FedLauncherGenerator {
     if (rtiIsLocal) {
       rtiCmd = getRtiCommandOneLine(fileConfig.getRtiBinPath().toString(), federates);
     } else {
-      String target =
-          (rtiConfig.getUser() != null) ? rtiConfig.getUser() + "@" + host : host;
+      String target = (rtiConfig.getUser() != null) ? rtiConfig.getUser() + "@" + host : host;
       rtiCmd =
           "ssh "
               + target
@@ -640,8 +639,7 @@ public class FedLauncherGenerator {
     lines.add("");
 
     // Create tmux session. The initial pane will become the first federate.
-    lines.add(
-        "    FED_PANE_0=$(tmux new-session -d -s \"$SESSION_NAME\" -P -F '#{pane_id}')");
+    lines.add("    FED_PANE_0=$(tmux new-session -d -s \"$SESSION_NAME\" -P -F '#{pane_id}')");
 
     // Arrange federate panes in a grid: up to 3 columns per row.
     int maxCols = 3;
@@ -694,8 +692,7 @@ public class FedLauncherGenerator {
     lines.add("    tmux set-option -t \"$SESSION_NAME\" pane-border-status top");
     lines.add("    tmux set-option -t \"$SESSION_NAME\" pane-border-format \" #{pane_title} \"");
     lines.add(
-        "    tmux set-option -t \"$SESSION_NAME\" pane-border-style"
-            + " 'fg=white,bg=colour25'");
+        "    tmux set-option -t \"$SESSION_NAME\" pane-border-style" + " 'fg=white,bg=colour25'");
     lines.add(
         "    tmux set-option -t \"$SESSION_NAME\" pane-active-border-style"
             + " 'fg=white,bg=colour25,bold'");
@@ -709,11 +706,7 @@ public class FedLauncherGenerator {
             + " \"RTI — Ctrl+C to stop | Ctrl+B d to detach and kill\"");
     for (int i = 0; i < numFeds; i++) {
       lines.add(
-          "    tmux select-pane -t \"$FED_PANE_"
-              + i
-              + "\" -T \""
-              + federates.get(i).name
-              + "\"");
+          "    tmux select-pane -t \"$FED_PANE_" + i + "\" -T \"" + federates.get(i).name + "\"");
     }
     lines.add("");
 
@@ -725,8 +718,7 @@ public class FedLauncherGenerator {
       String fedCmd;
       if (fed.isRemote) {
         String fedTarget = getUserHost(fed.user, fed.host);
-        String binDir =
-            "~/" + rtiConfig.getDirectory() + "/" + fileConfig.name + "/bin";
+        String binDir = "~/" + rtiConfig.getDirectory() + "/" + fileConfig.name + "/bin";
         fedCmd =
             "sleep 1 && ssh "
                 + fedTarget
@@ -741,19 +733,16 @@ public class FedLauncherGenerator {
                 + " -i $FEDERATION_ID'";
       } else {
         var buildConfig = getBuildConfig(fed, fileConfig, messageReporter);
-        fedCmd =
-            "sleep 1 && " + buildConfig.localExecuteCommand() + " ${REMAINING_ARGS[*]}";
+        fedCmd = "sleep 1 && " + buildConfig.localExecuteCommand() + " ${REMAINING_ARGS[*]}";
       }
-      lines.add(
-          "    tmux send-keys -t \"$FED_PANE_" + i + "\" \"" + fedCmd + "\" C-m");
+      lines.add("    tmux send-keys -t \"$FED_PANE_" + i + "\" \"" + fedCmd + "\" C-m");
     }
     lines.add("");
 
     // Focus the RTI pane and attach to the session.
     lines.add("    tmux select-pane -t \"$RTI_PANE\"");
     lines.add("    tmux attach-session -t \"$SESSION_NAME\"");
-    lines.add(
-        "    tmux kill-session -t \"$SESSION_NAME\" 2>/dev/null || true");
+    lines.add("    tmux kill-session -t \"$SESSION_NAME\" 2>/dev/null || true");
     lines.add("    EXITED_SUCCESSFULLY=true");
     lines.add("    exit 0");
     lines.add("fi");
