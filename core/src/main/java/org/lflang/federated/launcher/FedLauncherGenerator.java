@@ -182,8 +182,7 @@ public class FedLauncherGenerator {
               + "#### Bringing the RTI back to foreground so it can receive Control-C."
               + "\""
               + "\n");
-      shCode.append("fg %1" + "\n");
-      shCode.append("echo \"" + ANSI_RESET + "\"");
+      shCode.append("fg %1\n");
     }
     // Wait for launched processes to finish
     shCode
