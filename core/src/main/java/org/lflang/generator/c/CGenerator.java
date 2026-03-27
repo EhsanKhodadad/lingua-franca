@@ -54,6 +54,8 @@ import org.lflang.lf.Input;
 import org.lflang.lf.Instantiation;
 import org.lflang.lf.Mode;
 import org.lflang.lf.Model;
+import org.lflang.lf.Parameter;
+import org.lflang.lf.ParameterReference;
 import org.lflang.lf.Port;
 import org.lflang.lf.Preamble;
 import org.lflang.lf.Reaction;
@@ -296,6 +298,9 @@ public class CGenerator extends GeneratorBase {
   /** A code-generator for enclave-specific code, */
   private CEnclaveGenerator enclaveGenerator;
 
+  /** Main reactor parameters that can be overridden from the command line. */
+  private List<Parameter> cliParameters = new ArrayList<>();
+
   /** The enclave AST transformation is stored here and later passed to the enclave-generator. */
   private final CEnclavedReactorTransformation enclaveAST;
 
@@ -411,11 +416,9 @@ public class CGenerator extends GeneratorBase {
       generateHeaders();
       code.writeToFile(targetFile);
     } catch (IOException e) {
-      String message = e.getMessage();
-      messageReporter.nowhere().error(message);
+      messageReporter.nowhere().error(formatExceptionMessage(e));
     } catch (RuntimeException e) {
-      String message = e.getMessage();
-      messageReporter.nowhere().error(message);
+      messageReporter.nowhere().error(formatExceptionMessage(e));
       throw e;
     }
 
@@ -561,9 +564,18 @@ public class CGenerator extends GeneratorBase {
     GeneratorUtils.refreshProject(resource, context.getMode());
   }
 
+  private static String formatExceptionMessage(Throwable e) {
+    String message = e.getMessage();
+    return message == null || message.isBlank() ? e.getClass().getName() : message;
+  }
+
   private void generateCodeFor(String lfModuleName) throws IOException {
     code.pr(generateDirectives());
-    code.pr(new CMainFunctionGenerator(targetConfig).generateCode());
+    Reactor mainReactorClass =
+        mainDef != null ? ASTUtils.toDefinition(mainDef.getReactorClass()) : null;
+    var mainFunctionGenerator = new CMainFunctionGenerator(targetConfig, mainReactorClass);
+    code.pr(mainFunctionGenerator.generateCode());
+    this.cliParameters = mainFunctionGenerator.getCliParameters();
     // Generate code for each reactor.
     generateReactorDefinitions();
     copyUserFiles(targetConfig, fileConfig);
@@ -1646,10 +1658,20 @@ public class CGenerator extends GeneratorBase {
     for (TimerInstance timer : instance.timers) {
       if (!timer.isStartup()) {
         initializeTriggerObjects.pr(
-            CTimerGenerator.generateInitializer(timer, instance.containingEnclave));
+            CTimerGenerator.generateInitializer(
+                timer, instance.containingEnclave, supportsNativeParameterReferences()));
         instance.containingEnclave.numTimerTriggers += timer.getParent().getTotalWidth();
       }
     }
+  }
+
+  /**
+   * Return true if the generated C self struct stores parameters as native C types so that
+   * timer/deadline init code can reference them directly. The Python target stores parameters
+   * as PyObject* and must override this to return false.
+   */
+  protected boolean supportsNativeParameterReferences() {
+    return true;
   }
 
   /**
@@ -1803,7 +1825,8 @@ public class CGenerator extends GeneratorBase {
    * @param instance The reactor.
    */
   private void generateActionInitializations(ReactorInstance instance) {
-    initializeTriggerObjects.pr(CActionGenerator.generateInitializers(instance));
+    initializeTriggerObjects.pr(
+        CActionGenerator.generateInitializers(instance, supportsNativeParameterReferences()));
   }
 
   /**
@@ -1881,9 +1904,22 @@ public class CGenerator extends GeneratorBase {
     for (ReactionInstance reaction : instance.reactions) {
       var selfRef = CUtil.reactorRef(reaction.getParent()) + "->_lf__reaction_" + reaction.index;
       if (reaction.declaredDeadline != null) {
-        var deadline = reaction.declaredDeadline.maxDelay;
-        initializeTriggerObjects.pr(
-            selfRef + ".deadline = " + types.getTargetTimeExpr(deadline) + ";");
+        var delayExpr = reaction.getDefinition().getDeadline().getDelay();
+        if (supportsNativeParameterReferences()
+            && delayExpr instanceof ParameterReference paramRef) {
+          var reactorRef = CUtil.reactorRef(reaction.getParent());
+          initializeTriggerObjects.pr(
+              selfRef
+                  + ".deadline = "
+                  + reactorRef
+                  + "->"
+                  + paramRef.getParameter().getName()
+                  + ";");
+        } else {
+          var deadline = reaction.declaredDeadline.maxDelay;
+          initializeTriggerObjects.pr(
+              selfRef + ".deadline = " + types.getTargetTimeExpr(deadline) + ";");
+        }
       } else { // No deadline.
         initializeTriggerObjects.pr(selfRef + ".deadline = NEVER;");
       }
@@ -1962,6 +1998,22 @@ public class CGenerator extends GeneratorBase {
       } else {
         initializeTriggerObjects.pr(
             selfRef + "->" + parameter.getName() + " = " + initializer + ";");
+      }
+    }
+    // For the main reactor, override parameters with command-line values if given.
+    if (instance.isMainOrFederated() && !cliParameters.isEmpty()) {
+      for (Parameter param : cliParameters) {
+        var name = param.getName();
+        var baseType = param.getType() != null ? ASTUtils.baseType(param.getType()) : "";
+        initializeTriggerObjects.pr("if (_lf_cli_" + name + "_given) {");
+        if ("string".equals(baseType)) {
+          // CLI variable is const char*; self struct field is char* (typedef string).
+          initializeTriggerObjects.pr(
+              "    " + selfRef + "->" + name + " = (char*)_lf_cli_" + name + ";");
+        } else {
+          initializeTriggerObjects.pr("    " + selfRef + "->" + name + " = _lf_cli_" + name + ";");
+        }
+        initializeTriggerObjects.pr("}");
       }
     }
   }
