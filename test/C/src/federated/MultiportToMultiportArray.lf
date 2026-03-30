@@ -1,6 +1,6 @@
 // Check multiport output to multiport input. Destination port is wider than sending port.
 target C {
-  timeout: 2 sec
+  timeout: 2 sec,
 }
 
 reactor Source {
