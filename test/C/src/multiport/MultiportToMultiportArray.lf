@@ -1,5 +1,6 @@
 // Check multiport output to multiport input. Destination port is wider than sending port.
 target C {
+  fast: true,
   timeout: 2 sec,
 }
 
@@ -59,7 +60,7 @@ reactor Destination {
   =}
 }
 
-federated reactor MultiportToMultiportArray {
+main reactor MultiportToMultiportArray {
   a = new Source()
   b = new Destination()
   a.out -> b.in
