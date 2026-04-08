@@ -249,11 +249,11 @@ public class PythonGenerator extends CGenerator implements CCmakeGenerator.SetUp
       // The following assumes all reactors have a container.
       // This means that generated reactors **have** to be
       // added to a resource; not doing so will result in a NPE.
-      models.add((Model) ASTUtils.toDefinition(r).eContainer());
+      addModelAndSuperClassModels(ASTUtils.toDefinition(r), models);
     }
     // Add the main reactor if it is defined
     if (this.mainDef != null) {
-      models.add((Model) ASTUtils.toDefinition(this.mainDef.getReactorClass()).eContainer());
+      addModelAndSuperClassModels(ASTUtils.toDefinition(this.mainDef.getReactorClass()), models);
     }
     for (Model m : models) {
       // In the generated Python code, unlike C, all reactors go into the same file.
@@ -265,6 +265,17 @@ public class PythonGenerator extends CGenerator implements CCmakeGenerator.SetUp
     }
     return PythonPreambleGenerator.generateCIncludeStatements(
         targetConfig, targetLanguageIsCpp(), hasModalReactors);
+  }
+
+  /** Add the Model for the given reactor and all its superclasses to the set. */
+  private void addModelAndSuperClassModels(Reactor reactor, Set<Model> models) {
+    models.add((Model) reactor.eContainer());
+    var superClasses = ASTUtils.superClasses(reactor);
+    if (superClasses != null) {
+      for (var superClass : superClasses) {
+        models.add((Model) superClass.eContainer());
+      }
+    }
   }
 
   @Override
