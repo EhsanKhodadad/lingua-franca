@@ -42,6 +42,8 @@ import org.lflang.lf.Reactor;
 import org.lflang.lf.VarRef;
 import org.lflang.lf.WidthSpec;
 import org.lflang.target.Target;
+import org.lflang.target.TargetConfig;
+import org.lflang.target.property.CmakeArgsProperty;
 import org.lflang.target.property.DockerProperty;
 import org.lflang.target.property.ProtobufsProperty;
 import org.lflang.target.property.PythonVersionProperty;
@@ -89,7 +91,7 @@ public class PythonGenerator extends CGenerator implements CCmakeGenerator.SetUp
                 "lib/python_time.c",
                 "lib/pythontarget.c"),
             null, // Temporarily, because can't pass this.
-            generateCmakeInstall(context.getFileConfig())));
+            generateCmakeInstall(context.getFileConfig(), context.getTargetConfig())));
     cmakeGenerator.setCmakeGenerator(this);
   }
 
@@ -681,19 +683,29 @@ public class PythonGenerator extends CGenerator implements CCmakeGenerator.SetUp
       pythonVersion = targetConfig.get(PythonVersionProperty.INSTANCE) + " EXACT";
     }
     return ("""
-            set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-            add_compile_definitions(_PYTHON_TARGET_ENABLED)
-            add_subdirectory(core)
-            set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
-            set(LF_MAIN_TARGET <pyModuleName>)
-            set(Python_FIND_VIRTUALENV FIRST)
-            set(Python_FIND_STRATEGY LOCATION)
-            set(Python_FIND_FRAMEWORK LAST)
-            find_package(Python <pyVersion> REQUIRED COMPONENTS Interpreter Development)
-            Python_add_library(
-                ${LF_MAIN_TARGET}
-                MODULE
-            """
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_compile_definitions(_PYTHON_TARGET_ENABLED)
+add_subdirectory(core)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
+set(LF_MAIN_TARGET <pyModuleName>)
+set(Python_FIND_VIRTUALENV FIRST)
+set(Python_FIND_STRATEGY LOCATION)
+set(Python_FIND_FRAMEWORK LAST)
+# If Python_EXECUTABLE is a bare command name (e.g. mjpython), resolve it before
+# FindPython runs; otherwise FindPython may search PATH and pick another interpreter.
+if(Python_EXECUTABLE)
+  get_filename_component(_lf_python_exe_parent "${Python_EXECUTABLE}" DIRECTORY)
+  if(_lf_python_exe_parent STREQUAL "")
+    find_program(_lf_python_exe_resolved NAMES "${Python_EXECUTABLE}" REQUIRED)
+    set(Python_EXECUTABLE "${_lf_python_exe_resolved}" CACHE FILEPATH "Python interpreter" FORCE)
+    unset(_lf_python_exe_resolved)
+  endif()
+endif()
+find_package(Python <pyVersion> REQUIRED COMPONENTS Interpreter Development)
+Python_add_library(
+    ${LF_MAIN_TARGET}
+    MODULE
+"""
             + cSources.collect(Collectors.joining("\n    ", "    ", "\n"))
             + """
 )
@@ -714,30 +726,60 @@ target_compile_definitions(${LF_MAIN_TARGET} PUBLIC MODULE_NAME=<pyModuleName>)
     // The use of fileConfig.name will break federated execution, but that's fine
   }
 
-  private static String generateCmakeInstall(FileConfig fileConfig) {
+  /**
+   * Escape a string for embedding in a CMake double-quoted string literal.
+   */
+  private static String escapeForCmakeDoubleQuotedString(String value) {
+    return value.replace("\\", "\\\\").replace("\"", "\\\"");
+  }
+
+  /**
+   * CMake {@code set(LF_USER_PYTHON_LAUNCHER ...)} line: non-empty when the user set {@code
+   * Python_EXECUTABLE} in {@code cmake-args}, so install scripts keep that exact command (e.g.
+   * {@code mjpython}) instead of whatever path FindPython canonicalizes to.
+   */
+  private static String cmakeUserPythonLauncherLine(TargetConfig targetConfig) {
+    String userPy = targetConfig.getOrDefault(CmakeArgsProperty.INSTANCE).get("Python_EXECUTABLE");
+    if (userPy != null && !userPy.isBlank()) {
+      return "set(LF_USER_PYTHON_LAUNCHER \""
+          + escapeForCmakeDoubleQuotedString(userPy.strip())
+          + "\")";
+    }
+    return "set(LF_USER_PYTHON_LAUNCHER \"\")";
+  }
+
+  private static String generateCmakeInstall(FileConfig fileConfig, TargetConfig targetConfig) {
     final var pyMainPath =
         fileConfig.getSrcGenPath().resolve(fileConfig.name + ".py").toAbsolutePath();
     // need to replace '\' with '\\' on Windwos for proper escaping in cmake
     final var pyMainName = pyMainPath.toString().replace("\\", "\\\\");
+    final var userLauncherLine = cmakeUserPythonLauncherLine(targetConfig);
     return """
   if (NOT DEFINED CMAKE_INSTALL_BINDIR)
     set(CMAKE_INSTALL_BINDIR "bin")
+  endif()
+  <userLauncherLine>
+  if(LF_USER_PYTHON_LAUNCHER STREQUAL "")
+    set(LF_PY_FOR_LAUNCHER "${Python_EXECUTABLE}")
+  else()
+    set(LF_PY_FOR_LAUNCHER "${LF_USER_PYTHON_LAUNCHER}")
   endif()
   if(WIN32)
     file(GENERATE OUTPUT <fileName>.bat CONTENT
       "@echo off
 \
-      ${Python_EXECUTABLE} <pyMainName> %*"
+      ${LF_PY_FOR_LAUNCHER} <pyMainName> %*"
     )
     install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/<fileName>.bat DESTINATION ${CMAKE_INSTALL_BINDIR})
   else()
     file(GENERATE OUTPUT <fileName> CONTENT
         "#!/bin/sh\\n\\
-        ${Python_EXECUTABLE} <pyMainName> \\"$@\\""
+        ${LF_PY_FOR_LAUNCHER} <pyMainName> \\"$@\\""
     )
     install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/<fileName> DESTINATION ${CMAKE_INSTALL_BINDIR})
   endif()
 """
+        .replace("<userLauncherLine>", userLauncherLine)
         .replace("<fileName>", fileConfig.name)
         .replace("<pyMainName>", pyMainName);
   }
