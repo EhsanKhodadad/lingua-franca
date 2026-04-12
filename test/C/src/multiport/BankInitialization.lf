@@ -1,5 +1,5 @@
 /** Test initialize_from_file functions. */
-target CCpp {
+target C {
   cmake-include: "/lib/c/reactor-c/util/initialize_from_file.cmake",
   files: [
       "/lib/c/reactor-c/util/initialize_from_file.c",
