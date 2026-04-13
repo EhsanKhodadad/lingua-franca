@@ -32,8 +32,8 @@ reactor IncreaseDeadline {
       print("Deadline was not violated with lag smaller than 1 sec, as expected.")
   =} deadline(200 msec) {=
     elapsed_logical_time = lf.time.logical_elapsed()
-    elapsed_physicl_time = lf.time.physical_elapsed()
-    print(f"Deadline violation detected at Logical time: {elapsed_logical_time / MSEC(1)} msecs. Physical time: {elapsed_physicl_time / MSEC(1)} msecs.")
+    elapsed_physical_time = lf.time.physical_elapsed()
+    print(f"Deadline violation detected at Logical time: {elapsed_logical_time / MSEC(1)} msecs. Physical time: {elapsed_physical_time / MSEC(1)} msecs.")
     # When the next reaction is invoked on logical time 1 sec, the deadline handler should not be invoked when only sleeping 200 msecs.
     time.sleep(0.2)
     if self.deadline_checked:

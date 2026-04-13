@@ -25,8 +25,8 @@ reactor DecreaseDeadline {
       exit(1)
   =} deadline(100 msec) {=
     elapsed_logical_time = lf.time.logical_elapsed()
-    elapsed_physicl_time = lf.time.physical_elapsed()
-    print(f"Deadline violation detected as expected at Logical time: {elapsed_logical_time / MSEC(1)} msecs. Physical time: {elapsed_physicl_time / MSEC(1)} msecs.")
+    elapsed_physical_time = lf.time.physical_elapsed()
+    print(f"Deadline violation detected as expected at Logical time: {elapsed_logical_time / MSEC(1)} msecs. Physical time: {elapsed_physical_time / MSEC(1)} msecs.")
     # When the next reaction is invoked on logical time 50 msec, the deadline handler will be invoked because lf_sleep() here.
     time.sleep(0.06)
   =}
