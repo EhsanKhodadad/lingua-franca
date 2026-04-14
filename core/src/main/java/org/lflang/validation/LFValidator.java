@@ -1354,8 +1354,8 @@ public class LFValidator extends BaseLFValidator {
     } else if (name.equals("absent_after")) {
       checkAbsentAfterAttribute(attr);
     }
-    if (GLOBAL_ANNOTATION_NAMES.contains(name)) {
-      checkGlobalAnnotation(attr);
+    if (GLOBAL_ATTRIBUTE_NAMES.contains(name)) {
+      checkGlobalAttribute(attr);
     }
   }
 
@@ -1378,13 +1378,13 @@ public class LFValidator extends BaseLFValidator {
     }
   }
 
-  private void checkGlobalAnnotation(Attribute attr) {
+  private void checkGlobalAttribute(Attribute attr) {
     var container = attr.eContainer();
     if (!(container instanceof Reactor)) {
       error(
           "The @"
               + attr.getAttrName()
-              + " annotation is only allowed on a main or federated reactor.",
+              + " attribute is only allowed on a main or federated reactor.",
           Literals.ATTRIBUTE__ATTR_NAME);
       return;
     }
@@ -1393,7 +1393,7 @@ public class LFValidator extends BaseLFValidator {
       error(
           "The @"
               + attr.getAttrName()
-              + " annotation is only allowed on a main or federated reactor.",
+              + " attribute is only allowed on a main or federated reactor.",
           Literals.ATTRIBUTE__ATTR_NAME);
     }
   }
@@ -2097,7 +2097,7 @@ public class LFValidator extends BaseLFValidator {
       "Reserved words in the target language are not allowed for objects (inputs, outputs, actions,"
           + " timers, parameters, state, reactor definitions, and reactor instantiation): ";
 
-  private static final Set<String> GLOBAL_ANNOTATION_NAMES =
+  private static final Set<String> GLOBAL_ATTRIBUTE_NAMES =
       Set.of("build_type", "logging", "timeout", "fast", "keepalive", "clock_sync", "platform");
 
   private static List<String> SPACING_VIOLATION_POLICIES =
