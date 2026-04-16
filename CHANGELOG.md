@@ -1,13 +1,13 @@
 # Changelog
- 
+
 ## [v0.12.0](https://github.com/lf-lang/lingua-franca/tree/v0.12.0) (2026-04-16)
 
 **Highlights**
 
 This release offers a number of usability and infrastructure improvements. On the infrastructure side, the most significant is a refactoring of the network interface to make it less reliant on implementation via TCP sockets. A layer of abstraction has been introduced to support future development of other communication mechanisms, including encrypted communication. It also adds target properties `trace-plugin` and `cmake-args` for the C and Python targets in order to support alternative plugins for tracing such as the [Xronos Dashboard](https://github.com/lf-lang/lf-trace-xronos).  See [instructions](https://www.lf-lang.org/docs/next/reference/tracing/#live-tracing-in-c-via-the-xronos-dashboard).
 
-On the usability side, it is now possible to override parameter values of the main or federated reactor if they are primitive data types and do not control the width of multiports or banks. 
-This release also add utility functions for loading parameter values from a file. This is particularly useful for customizing the parameters of bank members. 
+On the usability side, it is now possible to override parameter values of the main or federated reactor if they are primitive data types and do not control the width of multiports or banks.
+This release also add utility functions for loading parameter values from a file. This is particularly useful for customizing the parameters of bank members.
 For federated execution, a new `--tmux` option gives a convenient way to start a federation using the [tmux terminal multiplexer](https://github.com/tmux/tmux/wiki). This separates the `stdin` and `stdout` from each of the federation components into separate windows. Another small enhancement is that the logging API now produces colored text on terminals that support colored text.
 This release also adds a Python API to for user-defined tracepoints similar to those in the C target.
 Finally, the diagrams now show annotations showing `maxwait` and `absent_after` attributes for federates and connections between federates. See the [blog about `maxwait`](https://www.lf-lang.org/blog/maxwait-patterns/), and the `@side` attributes for ports now support all four points of the compass, `"north"`, `"east"`, `"south"`, and `"west"`.
