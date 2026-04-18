@@ -1,5 +1,30 @@
 # Changelog
 
+## [v0.12.1](https://github.com/lf-lang/lingua-franca/tree/v0.12.1) (2026-04-17)
+
+**Highlights**
+
+This patch release fixes a memory leak reported in [issue #580 of reactor-c](https://github.com/lf-lang/reactor-c/issues/580).
+
+
+### Submodule [lf-lang/reactor-c](http://github.com/lf-lang/reactor-c)
+
+**🔧 Fixes**
+
+- Decrement reference count of old token when template token is replaced. [\#581](https://github.com/lf-lang/reactor-c/pull/581) (@edwardalee)
+
+
+### Submodule [lf-lang/reactor-cpp](http://github.com/lf-lang/reactor-cpp)
+
+- No Changes
+
+
+### Submodule [lf-lang/reactor-rs](http://github.com/lf-lang/reactor-rs)
+
+- No Changes
+
+
+
 ## [v0.12.0](https://github.com/lf-lang/lingua-franca/tree/v0.12.0) (2026-04-16)
 
 **Highlights**
